@@ -1,8 +1,11 @@
 import tensorflow as tf
 import numpy as np
 
+tf.enable_eager_execution()
+
 class MultiHeadAttention(tf.keras.layers.Layer):
     def __init__(self, d_model, num_heads):
+        super(MultiHeadAttention, self).__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         assert self.d_model % self.num_heads == 0
@@ -44,7 +47,8 @@ def feed_forward_network(d_model, d_internal):
     ])
 
 class EncodeLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, d_internal, num_heads = 2, dropout_rate = 0.1):
+    def __init__(self, d_model, d_internal, num_heads, dropout_rate):
+        super(EncodeLayer, self).__init__()
         self.d_model = d_model
         self.d_internal = d_internal
         self.num_heads = num_heads
@@ -65,7 +69,8 @@ class EncodeLayer(tf.keras.layers.Layer):
         return x
 
 class DecodeLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, d_internal, num_heads = 2, dropout_rate = 0.1):
+    def __init__(self, d_model, d_internal, num_heads, dropout_rate):
+        super(DecodeLayer, self).__init__()
         self.d_model = d_model
         self.d_internal = d_internal
         self.num_heads = num_heads
@@ -96,8 +101,8 @@ def angle_rates(positions, dimensions, d_model):
     return positions * rates
 
 def positional_encodings(max_length, d_model):
-    rates = angle_rates(np.range(max_length)[:, np.newaxis],
-        np.range(d_model)[np.newaxis, :], d_model)
+    rates = angle_rates(np.arange(max_length)[:, np.newaxis],
+        np.arange(d_model)[np.newaxis, :], d_model)
     sines = np.sin(rates[:, 0::2])
     cosines = np.cos(rates[:, 1::2])
     encodings = np.concatenate([sines, cosines], axis = -1)
@@ -105,14 +110,17 @@ def positional_encodings(max_length, d_model):
     return tf.cast(encodings, dtype = tf.float32)
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, vocab_size, max_seq, num_layers, d_model, d_internal, num_heads = 2, dropout_rate = 0.1):
+    def __init__(self, vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = None):
+        super(Encoder, self).__init__()
         self.num_layers = num_layers
         self.d_model = d_model
         self.d_internal = d_internal
         self.num_heads = num_heads
         self.dropout_rate = dropout_rate
         self.embeddings = tf.keras.layers.Embedding(vocab_size, d_model)
-        self.positional_encodings = positional_encodings(max_seq, d_model)
+        if max_sequence is None:
+            max_sequence = vocab_size
+        self.positional_encodings = positional_encodings(max_sequence, d_model)
         # positional_encodings (seq_length, d_model)
         self.layers = [
             EncodeLayer(self.d_model, self.d_internal, self.num_heads, self.dropout_rate) for _ in range(self.num_layers)
@@ -130,14 +138,17 @@ class Encoder(tf.keras.layers.Layer):
         return x # (batch_size,  seq_len, d_model)
 
 class Decoder(tf.keras.layers.Layer):
-    def __init__(self, vocab_size, max_seq, num_layers, d_model, d_internal, num_heads = 2, dropout_rate = 0.1):
+    def __init__(self, vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = None):
+        super(Decoder, self).__init__()
         self.num_layers = num_layers
         self.d_model = d_model
         self.d_internal = d_internal
         self.num_heads = num_heads
         self.dropout_rate = dropout_rate
         self.embeddings = tf.keras.layers.Embedding(vocab_size, d_model)
-        self.positional_encodings = positional_encodings(max_seq, d_model)
+        if max_sequence is None:
+            max_sequence = vocab_size
+        self.positional_encodings = positional_encodings(max_sequence, d_model)
         # positional_encodings (seq_length_target, d_model)
         self.layers = [
             DecodeLayer(self.d_model, self.d_internal, self.num_heads, self.dropout_rate) for _ in range(self.num_layers)
@@ -152,5 +163,37 @@ class Decoder(tf.keras.layers.Layer):
         x += self.positional_encodings[:, :seq_length, :]
         x = self.dropout(x, training = training)
         for i in range(self.num_layers):
-            x = = self.layers[i](x, encoder_output, padding_mask, look_ahead_mask, training)
+            x = self.layers[i](x, encoder_output, padding_mask, look_ahead_mask, training)
         return x # (..., seq_length_target, d_model)
+
+class Transformer(tf.keras.Model):
+    def __init__(self, source_vocab_size, target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = None):
+        super(Transformer, self).__init__()
+        self.encoder = Encoder(source_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate)
+        self.decoder = Decoder(target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate)
+        self.final_layer = tf.keras.layers.Dense(target_vocab_size)
+    def call(self, input, target, encoder_padding_mask, decoder_padding_mask, look_ahead_mask, training):
+        encoder_output = self.encoder(input, encoder_padding_mask, training)
+        # encoder_output (batch_size, source_seq_length)
+        decoder_output = self.decoder(target, encoder_output, decoder_padding_mask, look_ahead_mask, training)
+        # decoder_output (batch_size, target_seq_length, d_model)
+        final_output = self.final_layer(decoder_output) # (batch_size, target_seq_length, target_vocab_size)
+        return (final_output)
+
+def create_look_ahead_mask(size):
+    mask = 1 - tf.linalg.band_part(tf.ones((size, size)), -1, 0)
+    return mask
+
+def create_padding_mask(seq):
+    seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
+    return seq[:, tf.newaxis, tf.newaxis, :]
+
+def create_masks(input, target):
+    encoder_padding_mask = create_padding_mask(input)
+    decoder_padding_mask = create_padding_mask(input)
+    look_ahead_mask = create_look_ahead_mask(tf.shape(target)[1])[tf.newaxis, tf.newaxis, :, :]
+    dec_target_padding_mask = create_padding_mask(target)
+    dec_self_mask = tf.maximum(look_ahead_mask, dec_target_padding_mask)
+    # (batch_size, 1, 1, seq_length)
+    return encoder_padding_mask, decoder_padding_mask, dec_self_mask
+

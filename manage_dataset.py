@@ -197,15 +197,15 @@ hiragana_katakana = [
     '９'
 ]
 
-en_charset = [c for c in string.printable] + 'padding'
-jp_charset = rad.radicals_list + hiragana_katakana + [c for c in string.printable] + 'padding'
+en_charset = [c for c in string.printable] + ['padding']
+jp_charset = rad.radicals_list + hiragana_katakana + [c for c in string.printable] + ['padding']
 
 token_dataset = []
 for en, jp in sub_dataset:
     en_tokenized = []
     for c in en:
         try:
-            en_tokenized.append(en_charset.index(c))
+            en_tokenized.append(en_charset.index(c) + 1)
         except ValueError:
             print("%s not found in en charset, adding" % c)
             en_charset.append(c)
@@ -213,12 +213,9 @@ for en, jp in sub_dataset:
     jp_tokenized = []
     for c in jp:
         try:
-            jp_tokenized.append(jp_charset.index(c))
+            jp_tokenized.append(jp_charset.index(c) + 1)
         except ValueError:
             print("%s not found in jp charset, adding" % c)
             jp_charset.append(c)
             jp_tokenized.append(jp_charset.index(c))
     token_dataset.append((en_tokenized, jp_tokenized))
-
-print(sub_dataset[1000])
-print(token_dataset[1000])
