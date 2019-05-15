@@ -172,10 +172,10 @@ class Transformer(tf.keras.Model):
         self.encoder = Encoder(source_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate)
         self.decoder = Decoder(target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate)
         self.final_layer = tf.keras.layers.Dense(target_vocab_size)
-    def call(self, input, target, encoder_padding_mask, decoder_padding_mask, look_ahead_mask, training):
-        encoder_output = self.encoder(input, encoder_padding_mask, training)
+    def call(self, inp, tar, encoder_padding_mask, decoder_padding_mask, look_ahead_mask, training):
+        encoder_output = self.encoder(inp, encoder_padding_mask, training)
         # encoder_output (batch_size, source_seq_length)
-        decoder_output = self.decoder(target, encoder_output, decoder_padding_mask, look_ahead_mask, training)
+        decoder_output = self.decoder(tar, encoder_output, decoder_padding_mask, look_ahead_mask, training)
         # decoder_output (batch_size, target_seq_length, d_model)
         final_output = self.final_layer(decoder_output) # (batch_size, target_seq_length, target_vocab_size)
         return (final_output)
@@ -188,12 +188,12 @@ def create_padding_mask(seq):
     seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
     return seq[:, tf.newaxis, tf.newaxis, :]
 
-def create_masks(input, target):
-    encoder_padding_mask = create_padding_mask(input)
-    decoder_padding_mask = create_padding_mask(input)
-    look_ahead_mask = create_look_ahead_mask(tf.shape(target)[1])[tf.newaxis, tf.newaxis, :, :]
-    dec_target_padding_mask = create_padding_mask(target)
-    dec_self_mask = tf.maximum(look_ahead_mask, dec_target_padding_mask)
+def create_masks(inp, tar):
+    encoder_padding_mask = create_padding_mask(inp)
+    decoder_padding_mask = create_padding_mask(inp)
+    look_ahead_mask = create_look_ahead_mask(tf.shape(tar)[1])[tf.newaxis, tf.newaxis, :, :]
+    dec_target_padding_mask = create_padding_mask(tar)
+    decoder_self_mask = tf.maximum(look_ahead_mask, dec_target_padding_mask)
     # (batch_size, 1, 1, seq_length)
-    return encoder_padding_mask, decoder_padding_mask, dec_self_mask
+    return encoder_padding_mask, decoder_padding_mask, decoder_self_mask
 

@@ -199,6 +199,7 @@ hiragana_katakana = [
 
 en_charset = [c for c in string.printable] + ['padding']
 jp_charset = rad.radicals_list + hiragana_katakana + [c for c in string.printable] + ['padding']
+#TODO <unk>
 
 token_dataset = []
 for en, jp in sub_dataset:
