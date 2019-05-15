@@ -1,8 +1,6 @@
 import tensorflow as tf
 import numpy as np
 
-tf.enable_eager_execution()
-
 class MultiHeadAttention(tf.keras.layers.Layer):
     def __init__(self, d_model, num_heads):
         super(MultiHeadAttention, self).__init__()

@@ -18,11 +18,11 @@ def encode(source, target):
     target = [target_vocab_size + 1] + target + [target_vocab_size + 2]
     return (source, target)
 
-def loss(model, logits, labels):
+def loss(logits, labels):
     return tf.losses.sparse_softmax_cross_entropy(
         logits = logits, labels = labels)
 
-def train_step(inp, tar):
+def train_step_eager(inp, tar):
     tar_compare = tar[:, 1:]
     tar_feed = tar[:, :-1]
     encoder_padding_mask, decoder_padding_mask, decoder_self_mask = layers.create_masks(inp, tar_feed)
@@ -30,12 +30,21 @@ def train_step(inp, tar):
     with tf.GradientTape() as tape:
         predictions = transformer(inp, tar_feed, encoder_padding_mask, decoder_padding_mask,
             decoder_self_mask, training = 1)
-        loss_val = loss(transformer, predictions, tar_compare)
+        loss_val = loss(predictions, tar_compare)
 
     gradients = tape.gradient(loss_val, transformer.trainable_variables)
     optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
     epoch_loss_avg(loss_val)
     epoch_accuracy(tar_compare[:, :, tf.newaxis], predictions)
+
+inp = tf.placeholder(dtype = tf.int64, shape = [None, None], name = "inp")
+tar_compare = tf.placeholder(dtype = tf.int64, shape = [None, None], name = "tar_compare")
+tar_feed = tf.placeholder(dtype = tf.int64, shape = [None, None], name = "tar_feed")
+def train_graph():
+    encoder_padding_mask, decoder_padding_mask, decoder_self_mask = layers.create_masks(inp, tar_feed)
+    predictions = transformer(inp, tar_feed, encoder_padding_mask, decoder_padding_mask,
+        decoder_self_mask, training = 1)
+    return (loss(predictions, tar_compare))
 
 def pad_batch(batch_list):
     max_len = max([len(ex) for ex in batch_list])
@@ -50,8 +59,8 @@ def split_batches(examples, size):
         source_list = [ex[0] for ex in batch_list]
         target_list = [ex[1] for ex in batch_list]
         source_list, target_list = pad_batch(source_list), pad_batch(target_list)
-        source_list = tf.convert_to_tensor(source_list, dtype = tf.int64)
-        target_list = tf.convert_to_tensor(target_list, dtype = tf.int64)
+        source_list = np.array(source_list, dtype = np.int64)
+        target_list = np.array(target_list, dtype = np.int64)
         yield (source_list, target_list)
 
 # define training, test set
@@ -70,21 +79,28 @@ transformer = layers.Transformer(source_vocab_size + 3, target_vocab_size + 3,
 optimizer = tf.train.AdamOptimizer(
     learning_rate = 0.001, beta1 = 0.9, beta2 = 0.999
 )
-global_step = tf.Variable(0)
+init = tf.global_variables_initializer()
 epoch_loss_avg = tf.keras.metrics.Mean()
 epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
 checkpoint_path = "./checkpoints/train"
 checkpoint = tf.train.Checkpoint(model = transformer, optimizer = optimizer)
 checkpoint_manager = tf.train.CheckpointManager(checkpoint, checkpoint_path, max_to_keep = 5)
 # training loop
-for epoch in range(20):
-    start = time.time()
-    epoch_loss_avg.reset_states()
-    epoch_accuracy.reset_states()
-    for inp, tar in training_batches:
-        train_step(inp, tar)
-    if (epoch + 1) % 5 == 0:
-        path = checkpoint_manager.save()
+with tf.Session() as sess:
+    cost = train_graph()
+    minimize = optimizer.minimize(cost)
+    sess.run(init)
+    for epoch in range(20):
+    #start = time.time()
+    #epoch_loss_avg.reset_states()
+    #epoch_accuracy.reset_states()
+        for inp_b, tar in training_batches:
+            sess.run(minimize, feed_dict = {inp_b: inp,
+                tar_compare: tar[:, 1:],
+                tar_feed: tar[:, :-1]})
+    #    train_step(inp, tar)
+        if (epoch + 1) % 5 == 0:
+            path = checkpoint_manager.save()
         print("Saved checkpoint to %s" % path)
-    print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))
-    print("Time taken: %d" % (time.time() - start))
+    #print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))
+    #print("Time taken: %d" % (time.time() - start))
