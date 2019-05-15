@@ -110,7 +110,7 @@ def positional_encodings(max_length, d_model):
     return tf.cast(encodings, dtype = tf.float32)
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = None):
+    def __init__(self, vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence):
         super(Encoder, self).__init__()
         self.num_layers = num_layers
         self.d_model = d_model
@@ -121,7 +121,7 @@ class Encoder(tf.keras.layers.Layer):
         if max_sequence is None:
             max_sequence = vocab_size
         self.positional_encodings = positional_encodings(max_sequence, d_model)
-        # positional_encodings (seq_length, d_model)
+        # positional_encodings (1, seq_length, d_model)
         self.layers = [
             EncodeLayer(self.d_model, self.d_internal, self.num_heads, self.dropout_rate) for _ in range(self.num_layers)
         ]
@@ -138,7 +138,7 @@ class Encoder(tf.keras.layers.Layer):
         return x # (batch_size,  seq_len, d_model)
 
 class Decoder(tf.keras.layers.Layer):
-    def __init__(self, vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = None):
+    def __init__(self, vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence):
         super(Decoder, self).__init__()
         self.num_layers = num_layers
         self.d_model = d_model
@@ -169,8 +169,8 @@ class Decoder(tf.keras.layers.Layer):
 class Transformer(tf.keras.Model):
     def __init__(self, source_vocab_size, target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = None):
         super(Transformer, self).__init__()
-        self.encoder = Encoder(source_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate)
-        self.decoder = Decoder(target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate)
+        self.encoder = Encoder(source_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence)
+        self.decoder = Decoder(target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence)
         self.final_layer = tf.keras.layers.Dense(target_vocab_size)
     def call(self, inp, tar, encoder_padding_mask, decoder_padding_mask, look_ahead_mask, training):
         encoder_output = self.encoder(inp, encoder_padding_mask, training)

@@ -1,9 +1,5 @@
 import numpy as np
 import tensorflow as tf
-
-tf.enable_eager_execution()
-tfe = tf.contrib.eager
-
 import layers
 import manage_dataset as dataset
 import random
