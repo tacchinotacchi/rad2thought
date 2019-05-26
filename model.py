@@ -78,6 +78,8 @@ epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
 checkpoint_path = "./checkpoints/train"
 checkpoint = tf.train.Checkpoint(model = transformer, optimizer = optimizer)
 checkpoint_manager = tf.train.CheckpointManager(checkpoint, checkpoint_path, max_to_keep = 5)
+if checkpoint_manager.latest_checkpoint:
+    checkpoint.restore(checkpoint_manager.latest_checkpoint)
 # training loop
 for epoch in range(20):
     start = time.time()
@@ -85,8 +87,7 @@ for epoch in range(20):
     epoch_accuracy.reset_states()
     for inp, tar in training_batches:
         train_step(inp, tar)
-    if (epoch + 1) % 5 == 0:
-        path = checkpoint_manager.save()
-        print("Saved checkpoint to %s" % path)
+    path = checkpoint_manager.save()
+    print("Saved checkpoint to %s" % path)
     print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))
     print("Time taken: %d" % (time.time() - start))
