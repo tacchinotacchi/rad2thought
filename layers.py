@@ -172,7 +172,7 @@ class Transformer(tf.keras.Model):
         self.encoder = Encoder(source_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence)
         self.decoder = Decoder(target_vocab_size, num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence)
         self.final_layer = tf.keras.layers.Dense(target_vocab_size)
-    def call(self, inp, tar, encoder_padding_mask, decoder_padding_mask, look_ahead_mask, training):
+    def call(self, inp, tar, encoder_padding_mask, decoder_padding_mask, look_ahead_mask, training = False):
         encoder_output = self.encoder(inp, encoder_padding_mask, training)
         # encoder_output (batch_size, source_seq_length)
         decoder_output = self.decoder(tar, encoder_output, decoder_padding_mask, look_ahead_mask, training)

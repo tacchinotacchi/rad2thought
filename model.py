@@ -29,7 +29,7 @@ def train_step(inp, tar):
 
     with tf.GradientTape() as tape:
         predictions = transformer(inp, tar_feed, encoder_padding_mask, decoder_padding_mask,
-            decoder_self_mask, training = 1)
+            decoder_self_mask, training = True)
         loss_val = loss(transformer, predictions, tar_compare)
 
     gradients = tape.gradient(loss_val, transformer.trainable_variables)
@@ -44,15 +44,17 @@ def pad_batch(batch_list):
     return batch_list
 
 def split_batches(examples, size):
+    batches = []
     for i in range(0, len(examples), size):
         # turn examples[i:i+size] into tensor
         batch_list = examples[i:i+size]
         source_list = [ex[0] for ex in batch_list]
         target_list = [ex[1] for ex in batch_list]
         source_list, target_list = pad_batch(source_list), pad_batch(target_list)
-        source_list = tf.convert_to_tensor(source_list, dtype = tf.int64)
-        target_list = tf.convert_to_tensor(target_list, dtype = tf.int64)
-        yield (source_list, target_list)
+        source_list = np.array(source_list, dtype = np.int64)
+        target_list = np.array(target_list, dtype = np.int64)
+        batches.append((source_list, target_list))
+    return (batches)
 
 # define training, test set
 random.shuffle(dataset.token_dataset)
