@@ -89,9 +89,8 @@ for epoch in range(5):
     start = time.time()
     epoch_loss_avg.reset_states()
     epoch_accuracy.reset_states()
-    for inp, tar, ep_mask, dp_mask, ds_mask in zip(make_batches(train_encoded, 64)):
-        print(inp)
-        #train_step(inp, tar, ep_mask, dp_mask, ds_mask)
+    for batch_data in make_batches(train_encoded, 64):
+        train_step(*batch_data)
     path = checkpoint_manager.save()
     print("Saved checkpoint to %s" % path)
     print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))
