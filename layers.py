@@ -19,7 +19,7 @@ class MultiHeadAttention(tf.keras.layers.Layer):
         dk = tf.cast(tf.shape(qk_matmul)[-1], tf.float32)
         qk_matmul = qk_matmul / dk
         if mask is not None:
-            qk_matmul += (mask * 1e-9)
+            qk_matmul += (mask * -1e9)
         attention_logits = tf.nn.softmax(qk_matmul, axis = -1) # (..., seq_length_q, seq_length_v)
         attention_outputs = tf.matmul(attention_logits, v) # (..., seq_length_q, depth)
         return attention_outputs
