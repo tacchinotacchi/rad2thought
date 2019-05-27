@@ -5,67 +5,54 @@ import manage_dataset as dataset
 import random
 import time
 
+# define training, test set
+
+def permute_languages(example):
+    permutation = (1, 0)
+    return tuple([example[i] for i in permutation])
+
+perm_vocab_size = permute_languages((dataset.en_charset, dataset.jp_charset))
+source_vocab_size = len(perm_vocab_size[0])
+target_vocab_size = len(perm_vocab_size[1])
+
+def encode(source, target):
+    source = np.concatenate((
+        np.array([source_vocab_size + 1], dtype = np.int64),
+        source,
+        np.array([source_vocab_size + 2], dtype = np.int64)))
+    target = np.concatenate((
+        np.array([target_vocab_size + 1], dtype = np.int64),
+        target,
+        np.array([target_vocab_size + 2], dtype = np.int64)))
+    return (source, target)
+
+def make_batches(input_set, size):
+    for index in range(0, len(input_set), size):
+        batch = input_set[index:index + size]
+        source_batch = [d[0] for d in batch]
+        target_batch = [d[1] for d in batch]
+        max_size_source = max([d.size for d in source_batch])
+        max_size_target = max([d.size for d in target_batch])
+        source_batch = [np.pad(d, ((0, max_size_source - d.size)), 'constant') for d in source_batch]
+        source_batch = np.array(source_batch)
+        target_batch = [np.pad(d, ((0, max_size_target - d.size)), 'constant') for d in target_batch]
+        target_batch = np.array(target_batch)
+        ep_mask, dp_mask, ds_mask = layers.create_masks(source_batch, target_batch[:, :-1])
+        yield (source_batch, target_batch, ep_mask, dp_mask, ds_mask)
+
+perm_dataset = [permute_languages(ex) for ex in dataset.token_dataset]
+dataset_size = len(perm_dataset)
+train_examples, test_examples = perm_dataset[:int(dataset_size * 0.80)], perm_dataset[int(dataset_size * 0.80):]
+train_encoded = [encode(*example) for example in train_examples]
+test_encoded = [encode(*example) for example in test_examples]
+
+# define model, optimizer
 d_model = 128
 num_layers = 4
 d_internal = 512
 num_heads = 8
-source_vocab_size = len(dataset.en_charset) + 3
-target_vocab_size = len(dataset.jp_charset) + 3
 dropout_rate = 0.1
 
-def encode(source, target):
-    source = [source_vocab_size + 1] + source + [source_vocab_size + 2]
-    target = [target_vocab_size + 1] + target + [target_vocab_size + 2]
-    return (source, target)
-
-def loss(model, logits, labels):
-    return tf.losses.sparse_softmax_cross_entropy(
-        logits = logits, labels = labels)
-
-def train_step(inp, tar):
-    tar_compare = tar[:, 1:]
-    tar_feed = tar[:, :-1]
-    encoder_padding_mask, decoder_padding_mask, decoder_self_mask = layers.create_masks(inp, tar_feed)
-
-    with tf.GradientTape() as tape:
-        predictions = transformer(inp, tar_feed, encoder_padding_mask, decoder_padding_mask,
-            decoder_self_mask, training = True)
-        loss_val = loss(transformer, predictions, tar_compare)
-
-    gradients = tape.gradient(loss_val, transformer.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
-    epoch_loss_avg(loss_val)
-    epoch_accuracy(tar_compare[:, :, tf.newaxis], predictions)
-
-def pad_batch(batch_list):
-    max_len = max([len(ex) for ex in batch_list])
-    for example in batch_list:
-        example.extend([0] * (max_len - len(example)))
-    return batch_list
-
-def split_batches(examples, size):
-    batches = []
-    for i in range(0, len(examples), size):
-        # turn examples[i:i+size] into tensor
-        batch_list = examples[i:i+size]
-        source_list = [ex[0] for ex in batch_list]
-        target_list = [ex[1] for ex in batch_list]
-        source_list, target_list = pad_batch(source_list), pad_batch(target_list)
-        source_list = np.array(source_list, dtype = np.int64)
-        target_list = np.array(target_list, dtype = np.int64)
-        batches.append((source_list, target_list))
-    return (batches)
-
-# define training, test set
-random.shuffle(dataset.token_dataset)
-dataset_size = len(dataset.token_dataset)
-train_examples, test_examples = dataset.token_dataset[:int(dataset_size * 0.80)], dataset.token_dataset[int(dataset_size * 0.80):]
-train_encoded = [encode(*example) for example in train_examples]
-test_encoded = [encode(*example) for example in test_examples]
-random.shuffle(train_encoded)
-training_batches = split_batches(train_encoded, 32)
-
-# define model, optimizer
 transformer = layers.Transformer(source_vocab_size + 3, target_vocab_size + 3,
     num_layers, d_model, d_internal, num_heads, dropout_rate, max_sequence = 2000)
 # (..., target_seq_length, target_vocab_size)
@@ -80,13 +67,29 @@ checkpoint = tf.train.Checkpoint(model = transformer, optimizer = optimizer)
 checkpoint_manager = tf.train.CheckpointManager(checkpoint, checkpoint_path, max_to_keep = 5)
 if checkpoint_manager.latest_checkpoint:
     checkpoint.restore(checkpoint_manager.latest_checkpoint)
+
+def loss(model, logits, labels):
+    return tf.losses.sparse_softmax_cross_entropy(
+        logits = logits, labels = labels)
+
+def train_step(inp, tar, ep_mask, dp_mask, ds_mask):
+    tar_feed = tar[:, :-1]
+    tar_compare = tar[:, 1:]
+    with tf.GradientTape() as tape:
+        predictions = transformer(inp, tar_feed, ep_mask, dp_mask, ds_mask, training = True)
+        loss_val = loss(transformer, predictions, tar_compare)
+    gradients = tape.gradient(loss_val, transformer.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+    epoch_loss_avg(loss_val)
+    epoch_accuracy(tar_compare[:, :, tf.newaxis], predictions)
+
 # training loop
-for epoch in range(20):
+for epoch in range(5):
     start = time.time()
     epoch_loss_avg.reset_states()
     epoch_accuracy.reset_states()
-    for inp, tar in training_batches:
-        train_step(inp, tar)
+    for inp, tar, ep_mask, dp_mask, ds_mask in make_batches(train_encoded, 64):
+        train_step(inp, tar, ep_mask, dp_mask, ds_mask)
     path = checkpoint_manager.save()
     print("Saved checkpoint to %s" % path)
     print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))

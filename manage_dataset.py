@@ -1,5 +1,6 @@
 import load_radicals as rad
 import load_sentences as sen
+import numpy as np
 import string
 
 sub_dataset = []
@@ -219,3 +220,7 @@ for en, jp in sub_dataset:
             jp_charset.append(c)
             jp_tokenized.append(jp_charset.index(c))
     token_dataset.append((en_tokenized, jp_tokenized))
+
+token_dataset = [
+    (np.array(en, dtype = np.int64), np.array(jp, dtype = np.int64)) for en, jp in token_dataset
+]
