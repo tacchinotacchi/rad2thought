@@ -27,6 +27,7 @@ def encode(source, target):
     return (source, target)
 
 def make_batches(input_set, size):
+    random.shuffle(input_set)
     for index in range(0, len(input_set), size):
         batch = input_set[index:index + size]
         source_batch = [d[0] for d in batch]
@@ -38,7 +39,7 @@ def make_batches(input_set, size):
         target_batch = [np.pad(d, ((0, max_size_target - d.size)), 'constant') for d in target_batch]
         target_batch = np.array(target_batch)
         ep_mask, dp_mask, ds_mask = layers.create_masks(source_batch, target_batch[:, :-1])
-        yield (source_batch, target_batch, ep_mask, dp_mask, ds_mask)
+        yield [source_batch, target_batch, ep_mask, dp_mask, ds_mask]
 
 perm_dataset = [permute_languages(ex) for ex in dataset.token_dataset]
 dataset_size = len(perm_dataset)
@@ -88,8 +89,9 @@ for epoch in range(5):
     start = time.time()
     epoch_loss_avg.reset_states()
     epoch_accuracy.reset_states()
-    for inp, tar, ep_mask, dp_mask, ds_mask in make_batches(train_encoded, 64):
-        train_step(inp, tar, ep_mask, dp_mask, ds_mask)
+    for inp, tar, ep_mask, dp_mask, ds_mask in zip(make_batches(train_encoded, 64)):
+        print(inp)
+        #train_step(inp, tar, ep_mask, dp_mask, ds_mask)
     path = checkpoint_manager.save()
     print("Saved checkpoint to %s" % path)
     print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))
