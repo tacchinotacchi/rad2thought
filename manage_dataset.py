@@ -3,16 +3,10 @@ import load_sentences as sen
 import numpy as np
 import string
 
-sub_dataset = []
-for pair in sen.dataset:
-    substitute = []
-    for c in pair[1]:
-        substitute.extend(rad.kanji_dict[c] if (c in rad.kanji_dict) else [c])
-    sub_dataset.append((pair[0], substitute))
-
 hiragana_katakana = [
     'ー',
     '〜',
+    '～',
     'ぁ',
     'あ',
     'ぃ',
@@ -49,6 +43,7 @@ hiragana_katakana = [
     'ぢ',
     'っ',
     'つ',
+    'づ',
     'て',
     'で',
     'と',
@@ -143,6 +138,7 @@ hiragana_katakana = [
     'ノ',
     'ハ',
     'バ',
+    'パ',
     'オ',
     'ア',
     'ヒ',
@@ -186,6 +182,72 @@ hiragana_katakana = [
     '？',
     '、',
     '・',
+    '－',
+    '（',
+    '）',
+    '「',
+    '」',
+    '＝',
+    '：',
+    '．',
+    '　',
+    '—',
+    '＋',
+    '，',
+    '％',
+    '々',
+    'ａ',
+    'ｂ',
+    'ｃ',
+    'ｄ',
+    'ｅ',
+    'ｆ',
+    'ｇ',
+    'ｈ',
+    'ｉ',
+    'ｊ',
+    'ｋ',
+    'ｌ',
+    'ｍ',
+    'ｎ',
+    'ｏ',
+    'ｐ',
+    'ｑ',
+    'ｒ',
+    'ｔ',
+    'ｓ',
+    'ｕ',
+    'ｖ',
+    'ｗ',
+    'ｘ',
+    'ｙ',
+    'ｚ',
+    'Ａ',
+    'Ｂ',
+    'Ｃ',
+    'Ｄ',
+    'Ｅ',
+    'Ｆ',
+    'Ｇ',
+    'Ｈ',
+    'Ｉ',
+    'Ｊ',
+    'Ｋ',
+    'Ｌ',
+    'Ｍ',
+    'Ｎ',
+    'Ｏ',
+    'Ｐ',
+    'Ｑ',
+    'Ｒ',
+    'Ｔ',
+    'Ｓ',
+    'Ｕ',
+    'Ｖ',
+    'Ｗ',
+    'Ｘ',
+    'Ｙ',
+    'Ｚ',
     '０',
     '１',
     '２',
@@ -198,29 +260,45 @@ hiragana_katakana = [
     '９'
 ]
 
-en_charset = ['padding'] + [c for c in string.printable] + ['<unk>']
-jp_charset = ['padding'] + rad.radicals_list + hiragana_katakana + [c for c in string.printable] + ['<unk>']
-
-token_dataset = []
-for en, jp in sub_dataset:
-    en_tokenized = []
-    for c in en:
-        try:
-            en_tokenized.append(en_charset.index(c))
-        except ValueError:
-            print("%s not found in en charset, adding" % c)
-            en_charset.append(c)
-            en_tokenized.append(en_charset.index(c))
-    jp_tokenized = []
-    for c in jp:
-        try:
-            jp_tokenized.append(jp_charset.index(c))
-        except ValueError:
-            print("%s not found in jp charset, adding" % c)
-            jp_charset.append(c)
-            jp_tokenized.append(jp_charset.index(c))
-    token_dataset.append((en_tokenized, jp_tokenized))
-
-token_dataset = [
-    (np.array(en, dtype = np.int64), np.array(jp, dtype = np.int64)) for en, jp in token_dataset
+base_charset = [c for c in string.printable] + [
+    '€',
+    'ñ',
+    'é',
+    '’',
+    '℃',
+    '―'
 ]
+
+en_charset = ['<padding>'] + ['<unk>'] + base_charset
+jp_charset = ['<padding>'] + ['<unk>'] + base_charset + rad.radicals_list + hiragana_katakana
+
+def expand_kanji(original):
+    substitute = []
+    for c in original:
+        substitute.extend(rad.kanji_dict[c] if (c in rad.kanji_dict) else [c])
+    return substitute
+
+def tokenize_sentence(original, charset):
+    tokenized = np.empty(len(original) + 2, dtype=np.int64)
+    tokenized[0] = len(charset) + 1
+    for index, c in enumerate(original):
+        tokenized[index + 1] = charset.index(c)
+    tokenized[-1] = len(charset) + 2
+    return tokenized
+
+print("Tokenizing...")
+token_dataset = []
+error_sentences = 0
+index = 0
+for en, jp in sen.dataset_raw:
+    try:
+        en_tokenized = tokenize_sentence(en, en_charset)
+        jp = expand_kanji(jp)
+        jp_tokenized = tokenize_sentence(jp, jp_charset)
+        token_dataset.append((en_tokenized, jp_tokenized, en, jp))
+    except ValueError as e:
+        error_sentences += 1
+        #print("char not found in charset: " + str(e))
+    if index % 100000 == 0:
+        print("sentence %d processed, %d errors" % (index, error_sentences))
+    index += 1

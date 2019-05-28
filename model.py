@@ -15,17 +15,6 @@ perm_vocab_size = permute_languages((dataset.en_charset, dataset.jp_charset))
 source_vocab_size = len(perm_vocab_size[0])
 target_vocab_size = len(perm_vocab_size[1])
 
-def encode(source, target):
-    source = np.concatenate((
-        np.array([source_vocab_size + 1], dtype = np.int64),
-        source,
-        np.array([source_vocab_size + 2], dtype = np.int64)))
-    target = np.concatenate((
-        np.array([target_vocab_size + 1], dtype = np.int64),
-        target,
-        np.array([target_vocab_size + 2], dtype = np.int64)))
-    return (source, target)
-
 def make_batches(input_set, size):
     random.shuffle(input_set)
     for index in range(0, len(input_set), size):
@@ -38,14 +27,11 @@ def make_batches(input_set, size):
         source_batch = np.array(source_batch)
         target_batch = [np.pad(d, ((0, max_size_target - d.size)), 'constant') for d in target_batch]
         target_batch = np.array(target_batch)
-        ep_mask, dp_mask, ds_mask = layers.create_masks(source_batch, target_batch[:, :-1])
-        yield [source_batch, target_batch, ep_mask, dp_mask, ds_mask]
+        yield (source_batch, target_batch)
 
 perm_dataset = [permute_languages(ex) for ex in dataset.token_dataset]
 dataset_size = len(perm_dataset)
-train_examples, test_examples = perm_dataset[:int(dataset_size * 0.80)], perm_dataset[int(dataset_size * 0.80):]
-train_encoded = [encode(*example) for example in train_examples]
-test_encoded = [encode(*example) for example in test_examples]
+train_examples, test_examples = perm_dataset[:int(dataset_size * 0.90)], perm_dataset[int(dataset_size * 0.90):]
 
 # define model, optimizer
 d_model = 128
@@ -61,37 +47,29 @@ optimizer = tf.train.AdamOptimizer(
     learning_rate = 0.001, beta1 = 0.9, beta2 = 0.999
 )
 global_step = tf.Variable(0)
-epoch_loss_avg = tf.keras.metrics.Mean()
-epoch_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
 checkpoint_path = "./checkpoints/train"
 checkpoint = tf.train.Checkpoint(model = transformer, optimizer = optimizer)
-checkpoint_manager = tf.train.CheckpointManager(checkpoint, checkpoint_path, max_to_keep = 5)
-if checkpoint_manager.latest_checkpoint:
-    checkpoint.restore(checkpoint_manager.latest_checkpoint)
-
-def loss(model, logits, labels):
-    return tf.losses.sparse_softmax_cross_entropy(
-        logits = logits, labels = labels)
-
-def train_step(inp, tar, ep_mask, dp_mask, ds_mask):
-    tar_feed = tar[:, :-1]
-    tar_compare = tar[:, 1:]
-    with tf.GradientTape() as tape:
-        predictions = transformer(inp, tar_feed, ep_mask, dp_mask, ds_mask, training = True)
-        loss_val = loss(transformer, predictions, tar_compare)
-    gradients = tape.gradient(loss_val, transformer.trainable_variables)
-    optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
-    epoch_loss_avg(loss_val)
-    epoch_accuracy(tar_compare[:, :, tf.newaxis], predictions)
+status = checkpoint.restore(tf.train.latest_checkpoint(checkpoint_path))
+inp, tar_feed, tar_compare = (tf.placeholder(tf.int64, shape = [None, None]) for _ in range(3))
+ep_mask, dp_mask, ds_mask = layers.create_masks(inp, tar_feed)
+train_predictions = transformer(inp, tar_feed, ep_mask, dp_mask, ds_mask, training = True)
+infer = transformer(inp, tar_feed, ep_mask, dp_mask, ds_mask)
+model_loss = tf.losses.sparse_softmax_cross_entropy(
+    logits = train_predictions, labels = tar_compare)
+train_op = optimizer.minimize(model_loss)
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+status.initialize_or_restore(sess)
 
 # training loop
-for epoch in range(5):
+for epoch in range(10):
     start = time.time()
-    epoch_loss_avg.reset_states()
-    epoch_accuracy.reset_states()
-    for batch_data in make_batches(train_encoded, 64):
-        train_step(*batch_data)
-    path = checkpoint_manager.save()
-    print("Saved checkpoint to %s" % path)
-    print("Epoch %d Loss %f Accuracy %f" % (epoch + 1, epoch_loss_avg.result(), epoch_accuracy.result()))
+    for b_inp, b_tar in make_batches(train_examples, 2048):
+        _, loss_val = sess.run([train_op, model_loss], {
+            inp: b_inp, tar_feed: b_tar[:, :-1], tar_compare: b_tar[:, 1:]
+        })
+    if (epoch + 1) % 5 == 0:
+       path = checkpoint.save(checkpoint_path, sess)
+       print("Saved checkpoint to %s" % path)
+    print("Loss: %f" % loss_val)
     print("Time taken: %d" % (time.time() - start))
