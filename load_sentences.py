@@ -2,7 +2,7 @@ import re
 import random
 
 dataset_raw = []
-with open("raw") as file:
+with open("jpn.txt") as file:
     separator = re.compile("(.*)\t(.*)")
     dot = re.compile("")
     for line in file:
