@@ -280,10 +280,10 @@ def expand_kanji(original):
 
 def tokenize_sentence(original, charset):
     tokenized = np.empty(len(original) + 2, dtype=np.int64)
-    tokenized[0] = len(charset) + 1
+    tokenized[0] = len(charset)
     for index, c in enumerate(original):
         tokenized[index + 1] = charset.index(c)
-    tokenized[-1] = len(charset) + 2
+    tokenized[-1] = len(charset) + 1
     return tokenized
 
 print("Tokenizing...")
@@ -302,3 +302,12 @@ for en, jp in sen.dataset_raw:
     if index % 100000 == 0:
         print("sentence %d processed, %d errors" % (index, error_sentences))
     index += 1
+
+def decode(sentence, charset):
+    return ''.join(map(lambda t: charset[t], sentence))
+
+def decode_en(sentence):
+    return decode(sentence, en_charset)
+
+def decode_jp(sentence):
+    return decode(sentence, jp_charset)
