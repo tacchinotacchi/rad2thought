@@ -87,8 +87,6 @@ hiragana_katakana = [
     'ろ',
     'ゎ',
     'わ',
-    'う',
-    'ぃ',
     'を',
     'ん',
     'ァ',
@@ -140,8 +138,6 @@ hiragana_katakana = [
     'ハ',
     'バ',
     'パ',
-    'オ',
-    'ア',
     'ヒ',
     'ビ',
     'ピ',
@@ -269,10 +265,10 @@ base_charset = [c for c in string.printable] + [
     '―'
 ]
 
-en_charset = ['<padding>'] + ['<unk>'] + base_charset
-ja_charset = ['<padding>'] + ['<unk>'] + base_charset + list(rad_to_kanji.keys()) + hiragana_katakana
-en_charset = {val: index for index, val in enumerate(en_charset)}
-ja_charset = {val: index for index, val in enumerate(ja_charset)}
+en_charset_l = ['<padding>'] + ['<unk>'] + base_charset
+ja_charset_l = ['<padding>'] + ['<unk>'] + base_charset + list(rad_to_kanji.keys()) + hiragana_katakana
+en_charset = {val: index for index, val in enumerate(en_charset_l)}
+ja_charset = {val: index for index, val in enumerate(ja_charset_l)}
 
 def expand_radicals(sentence):
     expanded = []
@@ -296,13 +292,12 @@ def process_dataset(data):
         "en": [], "ja": [], "ja_expand": [], "en_token": [], "ja_token": []
     }
     error_pairs = 0
-    non_errors = 0
     for d in data:
         try:
             ja_expand = expand_radicals(d["ja"])
             en_token = encode_sentence(d["en"], en_charset)
             ja_token = encode_sentence(ja_expand, ja_charset)
-        except KeyError as e:
+        except KeyError:
             error_pairs += 1
             continue
         dataset["en"].append(d["en"])

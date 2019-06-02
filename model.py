@@ -52,7 +52,7 @@ def custom_loss(y_true, y_pred):
 def custom_accuracy(y_true, y_pred):
     # y_true (..., seq_length, 1)
     # y_pred (..., seq_length, vocab_size)
-    y_true = y_true[:, :, 0]
+    y_true = tf.cast(y_true[:, :, 0], dtype=tf.int64)
     y_pred = tf.argmax(y_pred, axis=-1)
     is_masked = tf.cast(tf.math.equal(y_true, 0), dtype=tf.float32)
     accuracy = tf.cast(tf.math.equal(y_true, y_pred), dtype=tf.float32)
