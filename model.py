@@ -1,22 +1,16 @@
 import numpy as np
 import tensorflow as tf
 import layers
-import manage_dataset as dataset
 import random
 import time
-
-# define training, test set
-def permute_languages(example):
-    permutation = (1, 0)
-    return tuple([example[i] for i in permutation])
+import opensubs
 
 def make_batches_generator(input_set, size):
     while True:
-        random.shuffle(input_set)
+        opensubs.shuffle_dataset(input_set)
         for index in range(0, len(input_set), size):
-            batch = input_set[index:index + size]
-            source_batch = [d[0] for d in batch]
-            target_batch = [d[1] for d in batch]
+            source_batch = input_set["ja_token"][index:index + size]
+            target_batch = input_set["en_token"][index:index + size]
             max_size_source = max([d.size for d in source_batch])
             max_size_target = max([d.size for d in target_batch])
             source_batch = [np.pad(d, ((0, max_size_source - d.size)), 'constant') for d in source_batch]
@@ -30,16 +24,12 @@ def make_batches_generator(input_set, size):
             yield (input_batch, ref_batch)
 
 def make_batches(input_set, size):
-    return (make_batches_generator(input_set, size)), len(range(0, len(input_set), size))
+    return make_batches_generator(input_set, size), len(range(0, len(input_set["en"]), size))
 
-perm_vocab_size = permute_languages((dataset.en_charset, dataset.jp_charset))
-source_vocab_size = len(perm_vocab_size[0])
-target_vocab_size = len(perm_vocab_size[1])
-
-perm_dataset = [permute_languages(ex) for ex in dataset.token_dataset]
-dataset_size = len(perm_dataset)
-random.shuffle(perm_dataset)
-train_examples, test_examples = perm_dataset[:int(dataset_size * 0.90)], perm_dataset[int(dataset_size * 0.90):]
+source_vocab_size = len(opensubs.ja_charset)
+target_vocab_size = len(opensubs.en_charset)
+opensubs.shuffle_dataset(opensubs.dataset)
+train_examples, test_examples = opensubs.split_dataset(opensubs.dataset, 0.90)
 
 # define model, optimizer
 d_model = 128
@@ -58,7 +48,7 @@ def custom_loss(y_true, y_pred):
     is_masked = tf.cast(tf.math.equal(y_true, 0), dtype=tf.float32)[:, :, 0]
     loss = tf.keras.backend.sparse_categorical_crossentropy(y_true, y_pred, axis=-1, from_logits=True)
     return tf.reduce_mean(loss * (1 - is_masked))
-    
+
 def custom_accuracy(y_true, y_pred):
     # y_true (..., seq_length, 1)
     # y_pred (..., seq_length, vocab_size)
@@ -74,5 +64,5 @@ transformer.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001, beta_1=0.9, bet
 history = []
 tf.keras.backend.set_learning_phase(1)
 gen, steps = make_batches(train_examples, 2000)
-step = transformer.fit(gen, epochs=120, steps_per_epoch=steps, initial_epoch=60)
+step = transformer.fit(gen, epochs=5, steps_per_epoch=steps, initial_epoch=0)
 history.append(step)

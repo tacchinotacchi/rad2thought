@@ -2,6 +2,7 @@ import numpy as np
 import string
 from opensubs_heavy import data_dict, kanji_to_rad, rad_to_kanji
 import time
+import random
 
 hiragana_katakana = [
     'ー',
@@ -310,6 +311,21 @@ def process_dataset(data):
         dataset["en_token"].append(en_token)
         dataset["ja_token"].append(ja_token)
     return dataset
+
+def split_dataset(dataset, percentage):
+    retain_size = int(len(dataset["en"]) * percentage)
+    first, second = {k: None for k in dataset.keys()}, {k: None for k in dataset.keys()}
+    for key in dataset.keys():
+        first[key] = dataset[key][:retain_size]
+        second[key] = dataset[key][retain_size:]
+    return first, second
+
+def shuffle_dataset(dataset):
+    indeces = list(range(len(dataset["en"])))
+    random.shuffle(indeces)
+    for key in dataset.keys():
+        dataset[key] = [dataset[key][i] for i in indeces]
+
 
 start = time.time()
 dataset = process_dataset(data_dict)
