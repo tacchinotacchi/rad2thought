@@ -1,7 +1,10 @@
-import load_radicals as rad
-import load_sentences as sen
 import numpy as np
 import string
+from radicals import kanji_to_rad, rad_to_kanji
+import opensubs
+import language_learning
+import time
+import random
 
 hiragana_katakana = [
     'ー',
@@ -86,8 +89,6 @@ hiragana_katakana = [
     'ろ',
     'ゎ',
     'わ',
-    'う',
-    'ぃ',
     'を',
     'ん',
     'ァ',
@@ -139,8 +140,6 @@ hiragana_katakana = [
     'ハ',
     'バ',
     'パ',
-    'オ',
-    'ア',
     'ヒ',
     'ビ',
     'ピ',
@@ -155,7 +154,7 @@ hiragana_katakana = [
     'ポ',
     'マ',
     'ミ',
-    'ム',
+#    'マ', also a radical
     'メ',
     'モ',
     'ャ',
@@ -259,7 +258,6 @@ hiragana_katakana = [
     '８',
     '９'
 ]
-
 base_charset = [c for c in string.printable] + [
     '€',
     'ñ',
@@ -269,45 +267,81 @@ base_charset = [c for c in string.printable] + [
     '―'
 ]
 
-en_charset = ['<padding>'] + ['<unk>'] + base_charset
-jp_charset = ['<padding>'] + ['<unk>'] + base_charset + rad.radicals_list + hiragana_katakana
+en_charset_l = ['<padding>'] + ['<unk>'] + base_charset
+ja_charset_l = ['<padding>'] + ['<unk>'] + base_charset + list(rad_to_kanji.keys()) + hiragana_katakana
+en_charset = {val: index for index, val in enumerate(en_charset_l)}
+ja_charset = {val: index for index, val in enumerate(ja_charset_l)}
 
-def expand_kanji(original):
-    substitute = []
-    for c in original:
-        substitute.extend(rad.kanji_dict[c] if (c in rad.kanji_dict) else [c])
-    return substitute
+def expand_radicals(sentence):
+    expanded = []
+    for ch in sentence:
+        if ch in kanji_to_rad:
+            expanded.extend(kanji_to_rad[ch])
+        else:
+            expanded.append(ch)
+    return expanded
 
-def tokenize_sentence(original, charset):
-    tokenized = np.empty(len(original) + 2, dtype=np.int64)
-    tokenized[0] = len(charset)
-    for index, c in enumerate(original):
-        tokenized[index + 1] = charset.index(c)
-    tokenized[-1] = len(charset) + 1
-    return tokenized
+def encode_sentence(sentence, charset):
+    tokens = np.empty(len(sentence) + 2, np.int64)
+    tokens[0] = len(charset)
+    for index, ch in enumerate(sentence):
+        tokens[index + 1] = charset[ch]
+    tokens[-1] = len(charset) + 1
+    return tokens
 
-print("Tokenizing...")
-token_dataset = []
-error_sentences = 0
-index = 0
-for en, jp in sen.dataset_raw:
-    try:
-        en_tokenized = tokenize_sentence(en, en_charset)
-        jp = expand_kanji(jp)
-        jp_tokenized = tokenize_sentence(jp, jp_charset)
-        token_dataset.append((en_tokenized, jp_tokenized, en, jp))
-    except ValueError as e:
-        error_sentences += 1
-        #print("char not found in charset: " + str(e))
-    if index % 100000 == 0:
-        print("sentence %d processed, %d errors" % (index, error_sentences))
-    index += 1
+def decode_sentence(seq, charset):
+    seq = np.trim_zeros(seq)
+    return ''.join(map(lambda t: charset[int(t)], seq[1:-1]))
 
-def decode(sentence, charset):
-    return ''.join(map(lambda t: charset[t], sentence))
+def process_dataset(data):
+    dataset = {
+        "en": [], "ja": [], "ja_expand": [], "en_token": [], "ja_token": []
+    }
+    error_pairs = 0
+    for d in data:
+        try:
+            ja_expand = expand_radicals(d["ja"])
+            en_token = encode_sentence(d["en"], en_charset)
+            ja_token = encode_sentence(ja_expand, ja_charset)
+        except KeyError as e:
+            error_pairs += 1
+            continue
+        dataset["en"].append(d["en"])
+        dataset["ja"].append(d["ja"])
+        dataset["ja_expand"].append(ja_expand)
+        dataset["en_token"].append(en_token)
+        dataset["ja_token"].append(ja_token)
+    print(error_pairs)
+    return dataset
 
-def decode_en(sentence):
-    return decode(sentence, en_charset)
+def split_dataset(dataset, percentage):
+    retain_size = int(len(dataset["en"]) * percentage)
+    first, second = {k: None for k in dataset.keys()}, {k: None for k in dataset.keys()}
+    for key in dataset.keys():
+        first[key] = dataset[key][:retain_size]
+        second[key] = dataset[key][retain_size:]
+    return first, second
 
-def decode_jp(sentence):
-    return decode(sentence, jp_charset)
+def shuffle_dataset(dataset):
+    indeces = list(range(len(dataset["en"])))
+    random.shuffle(indeces)
+    for key in dataset.keys():
+        dataset[key] = [dataset[key][i] for i in indeces]
+
+def merge_datasets(datasets):
+    merged = {
+        "en": [], "ja": [], "ja_expand": [], "en_token": [], "ja_token": []
+    }
+    for d in datasets:
+        for key in d.keys():
+            merged[key].extend(d[key])
+    return merged
+
+
+start = time.time()
+datasets_list = []
+datasets_list += [process_dataset(opensubs.dataset)]
+datasets_list += [process_dataset(language_learning.dataset)]
+dataset = merge_datasets(datasets_list)
+taken = time.time() - start
+print(taken)
